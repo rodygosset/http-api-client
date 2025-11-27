@@ -374,8 +374,8 @@ export function make<
 					: undefined
 
 			const request = HttpClientRequest.make(spec.method)(url).pipe(
-				(req) => (headers ? HttpClientRequest.setHeaders(req, headers) : req),
-				(req) => (bodyJson ? HttpClientRequest.setBody(req, bodyJson) : req)
+				(req) => (bodyJson ? HttpClientRequest.setBody(req, bodyJson) : req),
+				(req) => (headers ? HttpClientRequest.setHeaders(req, headers) : req)
 			)
 
 			const client = (yield* HttpClient.HttpClient).pipe((client) =>
