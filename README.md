@@ -293,6 +293,83 @@ program.pipe(
 )
 ```
 
+### 8. Custom Body Functions
+
+While body schemas are automatically encoded as JSON, you can also provide a function that returns an `Effect<HttpBody>` for custom body encoding. This is useful for form data, text, binary, or other non-JSON payloads.
+
+**When to use body functions vs schemas:**
+
+-   **Use a Schema** when sending JSON data (most common case)
+-   **Use a function** when you need form data, text, binary, or other custom encoding
+
+**Form Data Example:**
+
+```ts
+import { HttpBody } from "@effect/platform"
+import { Effect, Schema } from "effect"
+
+const uploadFile = RestApiClient.post({
+	url: "/upload",
+	body: (params: { file: File; description: string }) =>
+		Effect.gen(function* () {
+			const formData = new FormData()
+			formData.append("file", params.file)
+			formData.append("description", params.description)
+			return HttpBody.formData(formData)
+		}),
+	response: Schema.Struct({ id: Schema.String, url: Schema.String }),
+})
+
+const program = Effect.gen(function* () {
+	const file = new File(["content"], "test.txt", { type: "text/plain" })
+	const result = yield* uploadFile({
+		body: { file, description: "Test file upload" },
+	})
+	return result
+})
+```
+
+**Text Body Example:**
+
+```ts
+import { HttpBody } from "@effect/platform"
+import { Effect, Schema } from "effect"
+
+const sendMessage = RestApiClient.post({
+	url: "/messages",
+	body: (params: { message: string }) => Effect.succeed(HttpBody.text(params.message)),
+	response: Schema.Struct({ id: Schema.String, delivered: Schema.Boolean }),
+})
+
+const program = Effect.gen(function* () {
+	const result = yield* sendMessage({
+		body: { message: "Hello, world!" },
+	})
+	return result
+})
+```
+
+**Binary Body Example:**
+
+```ts
+import { HttpBody } from "@effect/platform"
+import { Effect, Schema } from "effect"
+
+const uploadBinary = RestApiClient.post({
+	url: "/binary",
+	body: (params: { data: Uint8Array; contentType: string }) => Effect.succeed(HttpBody.uint8Array(params.data)),
+	response: Schema.Struct({ id: Schema.String }),
+})
+
+const program = Effect.gen(function* () {
+	const binaryData = new Uint8Array([1, 2, 3, 4, 5])
+	const result = yield* uploadBinary({
+		body: { data: binaryData, contentType: "application/octet-stream" },
+	})
+	return result
+})
+```
+
 ## Advanced Patterns
 
 ### Custom Response Handlers

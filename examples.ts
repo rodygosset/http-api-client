@@ -1,4 +1,4 @@
-import { FetchHttpClient, Headers, HttpClientResponse } from "@effect/platform"
+import { FetchHttpClient, Headers, HttpBody, HttpClientResponse } from "@effect/platform"
 import { Config, Console, Effect, Layer, Schema } from "effect"
 import { RestApiClient } from "."
 
@@ -127,6 +127,38 @@ const createTodoWithCustomError = RestApiClient.post({
 		}),
 })
 
+// Body can be a function that takes a record parameter and returns an Effect<HttpBody>
+// This allows custom body encoding (e.g., form data, text, binary, etc.)
+// When a Schema is provided, the body is automatically encoded as JSON
+// When a function is provided, you have full control over the body encoding
+
+// Example: Form data upload
+const uploadFile = RestApiClient.post({
+	url: "/upload",
+	body: (params: { file: File; description: string }) =>
+		Effect.gen(function* () {
+			const formData = new FormData()
+			formData.append("file", params.file)
+			formData.append("description", params.description)
+			return HttpBody.formData(formData)
+		}),
+	response: Schema.Struct({ id: Schema.String, url: Schema.String }),
+})
+
+// Example: Text body
+const sendMessage = RestApiClient.post({
+	url: "/messages",
+	body: (params: { message: string }) => Effect.succeed(HttpBody.text(params.message)),
+	response: Schema.Struct({ id: Schema.String, delivered: Schema.Boolean }),
+})
+
+// Example: Binary/uint8Array body
+const uploadBinary = RestApiClient.post({
+	url: "/binary",
+	body: (params: { data: Uint8Array; contentType: string }) => Effect.succeed(HttpBody.uint8Array(params.data)),
+	response: Schema.Struct({ id: Schema.String }),
+})
+
 const test = Effect.gen(function* () {
 	const todos = yield* getTodos()
 
@@ -169,6 +201,26 @@ const test = Effect.gen(function* () {
 		processedTodo,
 		metadata,
 	})
+
+	// Example: Form data upload
+	const file = new File(["content"], "test.txt", { type: "text/plain" })
+	const uploadResult = yield* uploadFile({
+		body: { file, description: "Test file upload" },
+	})
+	yield* Console.log("Upload result: ", uploadResult)
+
+	// Example: Text body
+	const messageResult = yield* sendMessage({
+		body: { message: "Hello, world!" },
+	})
+	yield* Console.log("Message result: ", messageResult)
+
+	// Example: Binary body
+	const binaryData = new Uint8Array([1, 2, 3, 4, 5])
+	const binaryResult = yield* uploadBinary({
+		body: { data: binaryData, contentType: "application/octet-stream" },
+	})
+	yield* Console.log("Binary upload result: ", binaryResult)
 })
 
 // ============================================================================
@@ -336,7 +388,15 @@ const ApiClientConfigLive = Layer.effect(
 const layer = RestApiClient.layer.pipe(Layer.provide([FetchHttpClient.layer, ApiClientConfigLive]))
 
 // Run examples with the layer
-test.pipe(Effect.provide(layer), Effect.runPromise)
+test.pipe(
+	Effect.provide(layer),
+	Effect.catchAll((error) => Console.error("Error:", error)),
+	Effect.runPromise
+)
 
 // Example: Using Client with layer
-clientExample.pipe(Effect.provide(layer), Effect.runPromise)
+clientExample.pipe(
+	Effect.provide(layer),
+	Effect.catchAll((error) => Console.error("Error:", error)),
+	Effect.runPromise
+)

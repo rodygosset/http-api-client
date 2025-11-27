@@ -40,6 +40,30 @@ export type UrlFunction = string | ((arg: any) => string)
 export type HeadersFunction = Headers.Headers | ((arg: any) => Effect.Effect<Headers.Headers, any, any>) | undefined
 
 /**
+ * Represents request body handling that can be:
+ * - A `Schema.Schema` for automatic JSON encoding and validation
+ * - A function that takes a record parameter and returns an `Effect` that produces `HttpBody.HttpBody`
+ *
+ * When a Schema is provided, the body will be automatically encoded as JSON in the request.
+ * When a function is provided, it allows for custom body encoding (e.g., form data, binary, etc.).
+ *
+ * @example
+ * ```ts
+ * // Schema for automatic JSON encoding
+ * body: NewTodo
+ *
+ * // Custom body function
+ * body: (params: { file: File }) =>
+ *   Effect.gen(function* () {
+ *     const formData = new FormData()
+ *     formData.append("file", params.file)
+ *     return HttpBody.formData(formData)
+ *   })
+ * ```
+ */
+export type InputFunction = Schema.Schema<any> | ((arg: any) => Effect.Effect<HttpBody.HttpBody, any, any>)
+
+/**
  * Represents response handling that can be:
  * - `never` (response returned as-is as `HttpClientResponse`)
  * - A `Schema.Schema` for automatic JSON parsing and validation
@@ -122,7 +146,7 @@ export type ErrorFunction = Schema.Schema<any> | ((res: HttpClientResponse.HttpC
  * @property url - The URL endpoint. Can be a static string or a function that takes a record parameter and returns a string.
  * @property method - The HTTP method for this route
  * @property headers - Optional headers. Can be a static Headers instance or a function that takes a record parameter and returns an Effect<Headers>.
- * @property body - Optional body schema for request validation and encoding
+ * @property body - Optional body handler. Can be a Schema.Schema for automatic JSON encoding and validation, or a function that takes a record parameter and returns an Effect<HttpBody> for custom encoding.
  * @property response - Optional response handler. Can be a Schema for automatic parsing or a function that takes HttpClientResponse and returns an Effect.
  * @property error - Optional error handler. Can be a Schema for automatic error parsing or a function that takes HttpClientResponse and returns an error value. Only triggered when filterStatusOk is false and response status is outside 200-299 range.
  * @property filterStatusOk - Whether to filter non-OK status codes (defaults to false)
@@ -143,11 +167,11 @@ export type ErrorFunction = Schema.Schema<any> | ((res: HttpClientResponse.HttpC
  * ```ts
  * import { RestApiClient } from "."
  *
- * // Route with error handling
+ * // Route with error handling and body schema (encoded as JSON)
  * const route = new RestApiClient.Route({
  *   method: "POST",
  *   url: "/todos",
- *   body: NewTodo,
+ *   body: NewTodo, // Schema will be automatically encoded as JSON
  *   response: Todo,
  *   error: ApiError
  * })
@@ -157,7 +181,7 @@ export class Route<
 	M extends HttpMethod,
 	U extends UrlFunction,
 	H extends HeadersFunction = undefined,
-	I extends Schema.Schema<any> = never,
+	I extends InputFunction = never,
 	O extends OutputFunction = never,
 	E extends ErrorFunction = never
 > extends Data.TaggedClass("@RestApiClient/Route")<{
@@ -167,7 +191,7 @@ export class Route<
 	method: M
 	/** Optional headers. Can be a static Headers instance or a function that takes a record parameter and returns an Effect<Headers>. */
 	headers?: H
-	/** Optional body schema for request validation and encoding */
+	/** Optional body handler. Can be a Schema.Schema for automatic JSON encoding and validation, or a function that takes a record parameter and returns an Effect<HttpBody> for custom encoding. */
 	body?: I
 	/** Optional response handler. Can be a Schema for automatic parsing or a function that takes HttpClientResponse and returns an Effect. */
 	response?: O
@@ -183,14 +207,18 @@ export type MakerHeaders<H extends HeadersFunction = undefined> = H extends (
 ) => Effect.Effect<Headers.Headers, any, any>
 	? { headers: Parameters<H>[0] }
 	: {}
-export type MakerBody<I extends Schema.Schema<any> = never> = Schema.Schema.Type<I> extends void
+export type MakerBody<I extends InputFunction = never> = [I] extends [never]
 	? {}
-	: { body: Schema.Schema.Type<I> }
+	: I extends (arg: any) => Effect.Effect<HttpBody.HttpBody, any, any>
+	? { body: Parameters<I>[0] }
+	: I extends Schema.Schema<any>
+	? { body: Schema.Schema.Type<I> }
+	: {}
 
 export type MakerParams<
 	U extends UrlFunction,
 	H extends HeadersFunction = undefined,
-	I extends Schema.Schema<any> = never
+	I extends InputFunction = never
 > = IsEmptyObject<MakerUrl<U> & MakerHeaders<H> & MakerBody<I>> extends true
 	? void
 	: MakerUrl<U> & MakerHeaders<H> & MakerBody<I>
@@ -211,7 +239,7 @@ type InferEffectRequirements<E> = E extends (...args: any[]) => Effect.Effect<an
  * The returned function handles:
  * - Dynamic URL construction when `url` is a function
  * - Static or dynamic headers based on the `headers` configuration
- * - Request body encoding when a `body` schema is provided
+ * - Request body encoding when a `body` is provided (Schema.Schema is automatically encoded as JSON, or a function can return custom HttpBody)
  * - Response parsing/transformation based on the `response` configuration
  * - Error handling when `error` is provided and `filterStatusOk` is false (default). Error handling is triggered when response status is outside the 200-299 range.
  *
@@ -246,13 +274,13 @@ type InferEffectRequirements<E> = E extends (...args: any[]) => Effect.Effect<an
  * ```ts
  * import { RestApiClient } from "."
  *
- * // With dynamic headers
+ * // With dynamic headers and body schema (encoded as JSON)
  * const createTodo = RestApiClient.make(new RestApiClient.Route({
  *   method: "POST",
  *   url: "/todos",
  *   headers: (params: { contentType: string }) =>
  *     Effect.succeed(Headers.fromInput({ "Content-Type": params.contentType })),
- *   body: NewTodo,
+ *   body: NewTodo, // Schema will be automatically encoded as JSON
  *   response: Todo
  * }))
  *
@@ -285,11 +313,11 @@ type InferEffectRequirements<E> = E extends (...args: any[]) => Effect.Effect<an
  * ```ts
  * import { RestApiClient } from "."
  *
- * // With error handling (filterStatusOk defaults to false)
+ * // With error handling (filterStatusOk defaults to false) and body schema (encoded as JSON)
  * const createTodo = RestApiClient.make(new RestApiClient.Route({
  *   method: "POST",
  *   url: "/todos",
- *   body: NewTodo,
+ *   body: NewTodo, // Schema will be automatically encoded as JSON
  *   response: Todo,
  *   error: ApiError
  * }))
@@ -306,7 +334,7 @@ export function make<
 	M extends HttpMethod,
 	U extends UrlFunction,
 	H extends HeadersFunction = undefined,
-	I extends Schema.Schema<any> = never,
+	I extends InputFunction = never,
 	O extends OutputFunction = never,
 	E extends ErrorFunction = never
 >(spec: Route<M, U, H, I, O, E>) {
@@ -329,6 +357,22 @@ export function make<
 				})
 			)
 		) as Effect.Effect<Headers.Headers, InferEffectError<H>, InferEffectRequirements<H>>
+
+	const parseBody = (schema: Schema.Schema<any>, body: Schema.Schema.Type<I>) =>
+		Schema.encode(schema)(body).pipe(HttpBody.json)
+
+	const getBody = (params: MakerParams<U, H, I>) =>
+		Effect.gen(function* () {
+			if (!spec.body || !params || !("body" in params)) return undefined
+
+			if (Schema.isSchema(spec.body)) return yield* parseBody(spec.body, params.body)
+
+			return yield* spec.body(params.body)
+		}) as Effect.Effect<
+			HttpBody.Uint8Array | undefined,
+			InferEffectError<I> | InferEffectError<typeof parseBody>,
+			InferEffectRequirements<I> | InferEffectRequirements<typeof parseBody>
+		>
 
 	const parseResponse = (schema: Schema.Schema<any>, response: HttpClientResponse.HttpClientResponse) =>
 		Effect.gen(function* () {
@@ -378,10 +422,7 @@ export function make<
 
 			const headers = yield* getHeaders(params)
 
-			const body =
-				spec.body && params && "body" in params
-					? yield* Schema.encode(spec.body)(params.body).pipe(Effect.map(HttpBody.raw))
-					: undefined
+			const body = yield* getBody(params)
 
 			const request = HttpClientRequest.make(spec.method)(url).pipe(
 				(req) => (body ? HttpClientRequest.setBody(req, body) : req),
@@ -492,11 +533,12 @@ export const get = <
 /**
  * Creates a type-safe POST request handler.
  *
- * POST requests can include a body schema for request validation and encoding.
+ * POST requests can include a body handler. When a `Schema.Schema` is provided, it will be automatically encoded as JSON.
+ * Alternatively, a function can be provided to return a custom `HttpBody` (e.g., form data, binary, etc.).
  *
  * @template U - The URL function type (string or function)
  * @template H - The headers function type (undefined, Headers instance, or function)
- * @template I - The input body schema type
+ * @template I - The input body handler type (Schema.Schema or function returning Effect<HttpBody>)
  * @template O - The output/response handler type
  * @template E - The error handler type (Schema or function)
  *
@@ -507,10 +549,10 @@ export const get = <
  * ```ts
  * import { RestApiClient } from "."
  *
- * // POST with body schema
+ * // POST with body schema (encoded as JSON)
  * const createTodo = RestApiClient.post({
  *   url: "/todos",
- *   body: NewTodo,
+ *   body: NewTodo, // Schema will be automatically encoded as JSON
  *   response: Todo
  * })
  *
@@ -524,12 +566,12 @@ export const get = <
  * ```ts
  * import { RestApiClient } from "."
  *
- * // POST with dynamic URL, headers, and body
+ * // POST with dynamic URL, headers, and body schema (encoded as JSON)
  * const createTodoWithHeaders = RestApiClient.post({
  *   url: (params: { userId: string }) => `/users/${params.userId}/todos`,
  *   headers: (params: { contentType: string }) =>
  *     Effect.succeed(Headers.fromInput({ "Content-Type": params.contentType })),
- *   body: NewTodo,
+ *   body: NewTodo, // Schema will be automatically encoded as JSON
  *   response: Todo
  * })
  *
@@ -547,10 +589,10 @@ export const get = <
  * ```ts
  * import { RestApiClient } from "."
  *
- * // POST with error handling
+ * // POST with error handling and body schema (encoded as JSON)
  * const createTodo = RestApiClient.post({
  *   url: "/todos",
- *   body: NewTodo,
+ *   body: NewTodo, // Schema will be automatically encoded as JSON
  *   response: Todo,
  *   error: ApiError
  * })
@@ -565,7 +607,7 @@ export const get = <
 export const post = <
 	U extends UrlFunction,
 	H extends HeadersFunction = undefined,
-	I extends Schema.Schema<any> = never,
+	I extends InputFunction = never,
 	O extends OutputFunction = never,
 	E extends ErrorFunction = never
 >(
@@ -575,12 +617,13 @@ export const post = <
 /**
  * Creates a type-safe PUT request handler.
  *
- * PUT requests can include a body schema for request validation and encoding.
+ * PUT requests can include a body handler. When a `Schema.Schema` is provided, it will be automatically encoded as JSON.
+ * Alternatively, a function can be provided to return a custom `HttpBody` (e.g., form data, binary, etc.).
  * Typically used for updating existing resources.
  *
  * @template U - The URL function type (string or function)
  * @template H - The headers function type (undefined, Headers instance, or function)
- * @template I - The input body schema type
+ * @template I - The input body handler type (Schema.Schema or function returning Effect<HttpBody>)
  * @template O - The output/response handler type
  * @template E - The error handler type (Schema or function)
  *
@@ -591,10 +634,10 @@ export const post = <
  * ```ts
  * import { RestApiClient } from "."
  *
- * // PUT with dynamic URL and body
+ * // PUT with dynamic URL and body schema (encoded as JSON)
  * const updateTodo = RestApiClient.put({
  *   url: (params: { id: string }) => `/todos/${params.id}`,
- *   body: Todo,
+ *   body: Todo, // Schema will be automatically encoded as JSON
  *   response: Todo
  * })
  *
@@ -611,10 +654,10 @@ export const post = <
  * ```ts
  * import { RestApiClient } from "."
  *
- * // PUT with error handling
+ * // PUT with error handling and body schema (encoded as JSON)
  * const updateTodo = RestApiClient.put({
  *   url: (params: { id: string }) => `/todos/${params.id}`,
- *   body: Todo,
+ *   body: Todo, // Schema will be automatically encoded as JSON
  *   response: Todo,
  *   error: ApiError
  * })
@@ -632,7 +675,7 @@ export const post = <
 export const put = <
 	U extends UrlFunction,
 	H extends HeadersFunction = undefined,
-	I extends Schema.Schema<any> = never,
+	I extends InputFunction = never,
 	O extends OutputFunction = never,
 	E extends ErrorFunction = never
 >(
@@ -642,12 +685,14 @@ export const put = <
 /**
  * Creates a type-safe DELETE request handler.
  *
- * DELETE requests can optionally include a body schema, though it's uncommon.
+ * DELETE requests can optionally include a body handler. When a `Schema.Schema` is provided, it will be automatically encoded as JSON.
+ * Alternatively, a function can be provided to return a custom `HttpBody` (e.g., form data, binary, etc.).
+ * Body usage is uncommon for DELETE requests.
  * When no response schema or function is provided, the raw HttpClientResponse is returned.
  *
  * @template U - The URL function type (string or function)
  * @template H - The headers function type (undefined, Headers instance, or function)
- * @template I - The input body schema type (optional, rarely used for DELETE)
+ * @template I - The input body handler type (Schema.Schema or function returning Effect<HttpBody>, optional, rarely used for DELETE)
  * @template O - The output/response handler type
  * @template E - The error handler type (Schema or function)
  *
@@ -706,7 +751,7 @@ export const put = <
 export const del = <
 	U extends UrlFunction,
 	H extends HeadersFunction = undefined,
-	I extends Schema.Schema<any> = never,
+	I extends InputFunction = never,
 	O extends OutputFunction = never,
 	E extends ErrorFunction = never
 >(
@@ -808,7 +853,7 @@ export const del = <
  *
  * const createTodo = apiClient.post({
  *   url: "/todos",
- *   body: NewTodo,
+ *   body: NewTodo, // Schema will be automatically encoded as JSON
  *   response: Todo,
  * })
  * ```
@@ -937,12 +982,13 @@ export class Client<
 	/**
 	 * Creates a type-safe POST request handler that inherits the client's default headers and error handler.
 	 *
-	 * POST requests can include a body schema for request validation and encoding.
+	 * POST requests can include a body handler. When a `Schema.Schema` is provided, it will be automatically encoded as JSON.
+	 * Alternatively, a function can be provided to return a custom `HttpBody` (e.g., form data, binary, etc.).
 	 * The route will automatically use the client's default headers and error handler unless overridden.
 	 *
 	 * @template U - The URL function type (string or function)
 	 * @template H - The headers function type (defaults to DefaultHeaders from the client)
-	 * @template I - The input body schema type
+	 * @template I - The input body handler type (Schema.Schema or function returning Effect<HttpBody>)
 	 * @template O - The output/response handler type
 	 * @template E - The error handler type (defaults to DefaultError from the client)
 	 *
@@ -958,10 +1004,10 @@ export class Client<
 	 *   error: ApiError,
 	 * })
 	 *
-	 * // Inherits the default error handler from the client
+	 * // Inherits the default error handler from the client, body schema encoded as JSON
 	 * const createTodo = apiClient.post({
 	 *   url: "/todos",
-	 *   body: NewTodo,
+	 *   body: NewTodo, // Schema will be automatically encoded as JSON
 	 *   response: Todo,
 	 * })
 	 *
@@ -981,10 +1027,10 @@ export class Client<
 	 *     Effect.succeed(Headers.fromInput({ "Content-Type": params.contentType })),
 	 * })
 	 *
-	 * // Inherits default dynamic headers from the client
+	 * // Inherits default dynamic headers from the client, body schema encoded as JSON
 	 * const createTodo = apiClient.post({
 	 *   url: "/todos",
-	 *   body: NewTodo,
+	 *   body: NewTodo, // Schema will be automatically encoded as JSON
 	 *   response: Todo,
 	 * })
 	 *
@@ -1018,13 +1064,14 @@ export class Client<
 	/**
 	 * Creates a type-safe PUT request handler that inherits the client's default headers and error handler.
 	 *
-	 * PUT requests can include a body schema for request validation and encoding.
+	 * PUT requests can include a body handler. When a `Schema.Schema` is provided, it will be automatically encoded as JSON.
+	 * Alternatively, a function can be provided to return a custom `HttpBody` (e.g., form data, binary, etc.).
 	 * Typically used for updating existing resources.
 	 * The route will automatically use the client's default headers and error handler unless overridden.
 	 *
 	 * @template U - The URL function type (string or function)
 	 * @template H - The headers function type (defaults to DefaultHeaders from the client)
-	 * @template I - The input body schema type
+	 * @template I - The input body handler type (Schema.Schema or function returning Effect<HttpBody>)
 	 * @template O - The output/response handler type
 	 * @template E - The error handler type (defaults to DefaultError from the client)
 	 *
@@ -1040,10 +1087,10 @@ export class Client<
 	 *   error: ApiError,
 	 * })
 	 *
-	 * // Inherits the default error handler from the client
+	 * // Inherits the default error handler from the client, body schema encoded as JSON
 	 * const updateTodo = apiClient.put({
 	 *   url: (params: { id: string }) => `/todos/${params.id}`,
-	 *   body: Todo,
+	 *   body: Todo, // Schema will be automatically encoded as JSON
 	 *   response: Todo,
 	 * })
 	 *
@@ -1064,10 +1111,10 @@ export class Client<
 	 *   headers: Headers.fromInput({ "X-API-Version": "v2" }),
 	 * })
 	 *
-	 * // Inherits default headers from the client
+	 * // Inherits default headers from the client, body schema encoded as JSON
 	 * const updateTodo = apiClient.put({
 	 *   url: (params: { id: string }) => `/todos/${params.id}`,
-	 *   body: Todo,
+	 *   body: Todo, // Schema will be automatically encoded as JSON
 	 *   response: Todo,
 	 * })
 	 * ```
@@ -1093,13 +1140,15 @@ export class Client<
 	/**
 	 * Creates a type-safe DELETE request handler that inherits the client's default headers and error handler.
 	 *
-	 * DELETE requests can optionally include a body schema, though it's uncommon.
+	 * DELETE requests can optionally include a body handler. When a `Schema.Schema` is provided, it will be automatically encoded as JSON.
+	 * Alternatively, a function can be provided to return a custom `HttpBody` (e.g., form data, binary, etc.).
+	 * Body usage is uncommon for DELETE requests.
 	 * When no response schema or function is provided, the raw HttpClientResponse is returned.
 	 * The route will automatically use the client's default headers and error handler unless overridden.
 	 *
 	 * @template U - The URL function type (string or function)
 	 * @template H - The headers function type (defaults to DefaultHeaders from the client)
-	 * @template I - The input body schema type (optional, rarely used for DELETE)
+	 * @template I - The input body handler type (Schema.Schema or function returning Effect<HttpBody>, optional, rarely used for DELETE)
 	 * @template O - The output/response handler type
 	 * @template E - The error handler type (defaults to DefaultError from the client)
 	 *
