@@ -7,6 +7,9 @@ A type-safe HTTP client built on [Effect](https://effect.website) that transform
 Instead of manually constructing HTTP requests with scattered type assertions, `RestApiClient` lets you **describe your API routes declaratively** and get back **fully type-safe Effect functions**:
 
 ```ts
+import { Effect, Schema } from "effect"
+import { Client } from "rest-api-client"
+
 const getTodo = Client.get({
 	url: (params: { id: string }) => `/todos/${params.id}`,
 	response: Todo,
@@ -29,7 +32,7 @@ bun add effect @effect/platform
 
 ```ts
 import { FetchHttpClient } from "@effect/platform"
-import { Effect, Layer, Schema } from "effect"
+import { Console, Effect, Layer, Schema } from "effect"
 import { Client } from "rest-api-client"
 
 // Define your data schemas
@@ -66,6 +69,9 @@ See the [`examples`](./examples) folder for more complete examples.
 ### Static Routes
 
 ```ts
+import { Effect, Schema } from "effect"
+import { Client } from "rest-api-client"
+
 const getTodos = Client.get({
 	url: "/todos",
 	response: Todo.pipe(Schema.Array),
@@ -80,6 +86,9 @@ const program = Effect.gen(function* () {
 ### Dynamic URLs
 
 ```ts
+import { Effect } from "effect"
+import { Client } from "rest-api-client"
+
 const getTodo = Client.get({
 	url: (params: { id: string; version?: number }) =>
 		`/todos/${params.id}${params.version ? `?version=${params.version}` : ""}`,
@@ -97,6 +106,9 @@ const program = Effect.gen(function* () {
 **Schema-based (JSON):**
 
 ```ts
+import { Effect, Schema } from "effect"
+import { Client } from "rest-api-client"
+
 const NewTodo = Todo.pipe(Schema.omit("id", "completed"))
 
 const createTodo = Client.post({
@@ -115,6 +127,8 @@ const program = Effect.gen(function* () {
 
 ```ts
 import { HttpBody } from "@effect/platform"
+import { Effect, Schema } from "effect"
+import { Client } from "rest-api-client"
 
 const uploadFile = Client.post({
 	url: "/upload",
@@ -141,6 +155,8 @@ const program = Effect.gen(function* () {
 **Schema-based:**
 
 ```ts
+import { Client } from "rest-api-client"
+
 const getTodo = Client.get({
 	url: (params: { id: string }) => `/todos/${params.id}`,
 	response: Todo,
@@ -150,7 +166,9 @@ const getTodo = Client.get({
 **Custom function:**
 
 ```ts
-import { HttpClientResponse } from "@effect/platform"
+import { Headers, HttpClientResponse } from "@effect/platform"
+import { Effect, Schema } from "effect"
+import { Client } from "rest-api-client"
 
 const getTodoWithMetadata = Client.get({
 	url: (params: { id: string }) => `/todos/${params.id}`,
@@ -168,6 +186,9 @@ const getTodoWithMetadata = Client.get({
 **Schema-based:**
 
 ```ts
+import { Console, Effect, Schema } from "effect"
+import { Client } from "rest-api-client"
+
 class ApiError extends Schema.TaggedError<ApiError>()("@app/errors/ApiError", {
 	message: Schema.String,
 	statusCode: Schema.Number,
@@ -200,6 +221,10 @@ program.pipe(
 **Custom function:**
 
 ```ts
+import { HttpClientResponse } from "@effect/platform"
+import { Effect } from "effect"
+import { Client } from "rest-api-client"
+
 const createTodo = Client.post({
 	url: "/todos",
 	body: NewTodo,
@@ -214,6 +239,7 @@ const createTodo = Client.post({
 
 ```ts
 import { Headers } from "@effect/platform"
+import { Client } from "rest-api-client"
 
 const getTodo = Client.get({
 	url: "/todos/123",
@@ -228,6 +254,10 @@ const getTodo = Client.get({
 **Dynamic:**
 
 ```ts
+import { Headers } from "@effect/platform"
+import { Effect } from "effect"
+import { Client } from "rest-api-client"
+
 const createTodo = Client.post({
 	url: "/todos",
 	body: NewTodo,
@@ -286,7 +316,9 @@ Routes return `Effect` values that can be:
 Configuration is provided via Effect Layers:
 
 ```ts
-import { Config, Layer } from "effect"
+import { FetchHttpClient } from "@effect/platform"
+import { Config, Effect, Layer } from "effect"
+import { Client } from "rest-api-client"
 
 const ApiClientConfigLive = Layer.effect(
 	Client.Config,
@@ -319,6 +351,8 @@ Create a client with default headers and error handlers:
 
 ```ts
 import { Headers, HttpClientResponse } from "@effect/platform"
+import { Schema } from "effect"
+import { Client } from "rest-api-client"
 
 const apiClient = new Client.Client({
 	headers: Headers.fromInput({
@@ -351,7 +385,8 @@ const getPublicData = apiClient.get({
 Use `Input.value()` for static body values:
 
 ```ts
-import { Input } from "rest-api-client"
+import { Effect, Schema } from "effect"
+import { Client, Input } from "rest-api-client"
 
 const updateTodo = Client.put({
 	url: "/todos/123",
@@ -374,6 +409,10 @@ const program = Effect.gen(function* () {
 Use functions for non-JSON bodies:
 
 ```ts
+import { HttpBody } from "@effect/platform"
+import { Effect, Schema } from "effect"
+import { Client } from "rest-api-client"
+
 // Form data
 const uploadFile = Client.post({
 	url: "/upload",
@@ -406,6 +445,10 @@ const uploadBinary = Client.post({
 Extract metadata or process responses:
 
 ```ts
+import { Headers, HttpClientResponse } from "@effect/platform"
+import { Effect, Schema } from "effect"
+import { Client } from "rest-api-client"
+
 const getTodoWithMetadata = Client.get({
 	url: (params: { id: string }) => `/todos/${params.id}`,
 	response: (res: HttpClientResponse.HttpClientResponse) =>
