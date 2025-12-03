@@ -168,7 +168,7 @@ export function make<
 		) as Effect.Effect<Headers.Headers, InferEffectError<H>, InferEffectRequirements<H>>
 
 	const parseBody = (schema: MakerSchema, body: Schema.Schema.Type<I>) =>
-		Schema.encode(schema)(body).pipe(HttpBody.json)
+		Schema.encode(schema)(body).pipe(Effect.flatMap(HttpBody.json))
 
 	const getBody = (params: MakerParams<U, H, I>) =>
 		Effect.gen(function* () {
