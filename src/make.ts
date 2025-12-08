@@ -1,15 +1,14 @@
-import { fromMakerHeaders, type MakerHeaders, type MakerHeadersFn, type ToHeaders } from "./headers"
-import { fromMakerUrl, type MakerUrl, type MakerUrlFn, type ToUrl } from "./url"
-import { fromMakerInput, value, type MakerInput, type MakerInputFn, type ToInput } from "./input"
-import type { MakerSchema } from "./common"
-import { Effect, Schema, Option } from "effect"
-import type { IsEmptyObject } from "./utils"
-import { type InferOutput, type MakerOutput, fromMakerOutput, type ToOutput } from "./output"
-import { HttpClientResponse, Headers, HttpBody, HttpClient, HttpClientRequest } from "@effect/platform"
-import type { InferEffectError, InferEffectRequirements } from "./utils"
+import { Headers, HttpBody, HttpClient, HttpClientRequest, HttpClientResponse } from "@effect/platform"
 import type { HttpMethod } from "@effect/platform/HttpMethod"
-import { type InferResponseError, type MakerError, fromMakerError, type ToError } from "./error"
+import { Effect, Option, Schema } from "effect"
+import type { MakerSchema } from "./common"
+import { fromMakerError, type InferResponseError, type MakerError, type ToError } from "./error"
+import { fromMakerHeaders, type MakerHeaders, type MakerHeadersFn, type ToHeaders } from "./headers"
+import { fromMakerInput, type MakerInput, type MakerInputFn, type ToInput } from "./input"
+import { fromMakerOutput, type InferOutput, type MakerOutput, type ToOutput } from "./output"
 import { Route } from "./route"
+import { fromMakerUrl, type MakerUrl, type MakerUrlFn, type ToUrl } from "./url"
+import type { InferEffectError, InferEffectRequirements, IsEmptyObject } from "./utils"
 
 /**
  * Extracts URL parameters from a MakerUrl type.
@@ -25,7 +24,11 @@ import { Route } from "./route"
  * // Params = { url: { id: string } }
  * ```
  */
-export type MakerUrlParams<U extends MakerUrl> = U extends MakerUrlFn ? { url: Parameters<U>[0] } : {}
+export type MakerUrlParams<U extends MakerUrl> = U extends MakerUrlFn
+	? Parameters<U> extends []
+		? {}
+		: { url: Parameters<U>[0] }
+	: {}
 
 /**
  * Extracts header parameters from a MakerHeaders type.
@@ -46,7 +49,9 @@ export type MakerUrlParams<U extends MakerUrl> = U extends MakerUrlFn ? { url: P
 export type MakerHeadersParams<H extends MakerHeaders = never> = [H] extends [never]
 	? {}
 	: H extends MakerHeadersFn
-	? { headers: Parameters<H>[0] }
+	? Parameters<H> extends []
+		? {}
+		: { headers: Parameters<H>[0] }
 	: {}
 
 /**
@@ -68,7 +73,9 @@ export type MakerHeadersParams<H extends MakerHeaders = never> = [H] extends [ne
 export type MakerBodyParams<I extends MakerInput = never> = [I] extends [never]
 	? {}
 	: I extends MakerInputFn
-	? { body: Parameters<I>[0] }
+	? Parameters<I> extends []
+		? {}
+		: { body: Parameters<I>[0] }
 	: I extends MakerSchema
 	? { body: Schema.Schema.Type<I> }
 	: {}
