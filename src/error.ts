@@ -1,7 +1,7 @@
 import { Data, Effect, Schema as S } from "effect"
 import { HttpClientResponse } from "@effect/platform"
 import type { MakerSchema } from "./common"
-import type { InferEffectError } from "./utils"
+import type { InferFnError } from "./utils"
 
 /**
  * An Effect Schema used to parse error responses.
@@ -126,5 +126,5 @@ export const fromMakerError = <E extends MakerError>(error: E) => (S.isSchema(er
 export type InferResponseError<T extends MakerError> = T extends MakerSchema
 	? S.Schema.Type<T>
 	: T extends MakerErrorFn
-	? InferEffectError<T>
+	? InferFnError<T>
 	: never

@@ -1,11 +1,12 @@
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "@effect/platform"
-import { Context, Data, Effect, Layer } from "effect"
+import { Context, Data, Effect, Layer, pipe } from "effect"
 import type { MakerError } from "./error"
 import type { MakerHeaders } from "./headers"
 import type { MakerInput } from "./input"
 import * as Make from "./make"
 import type { MakerOutput } from "./output"
 import type { MakerUrl } from "./url"
+import { pipeArguments } from "effect/Pipeable"
 
 /**
  * Reusable client with default headers and error functions.
@@ -266,14 +267,133 @@ export const layerConfig = (config: Context.Tag.Service<Config>) =>
 	layer.pipe(Layer.provide([FetchHttpClient.layer, Layer.succeed(Config, config)]))
 
 /**
- * Creates a factory function that returns a Client instance with default headers and error handling.
- * This factory function is designed to be used with `Effect.Service`'s `sync` constructor.
- * The returned factory function `() => ({ client: new Client(...) })` can be passed directly to `sync`.
+ * Type alias for a function that takes parameters and returns an Effect.
+ * Used to represent route functions that require dependencies to execute.
+ *
+ * @template P - Parameters type for the function
+ * @template A - Success value type of the Effect
+ * @template E - Error type of the Effect
+ * @template R - Requirements (dependencies) type of the Effect
+ *
+ * @example
+ * ```ts
+ * import { Effect, Schema } from "effect"
+ * import { Client } from "rest-api-client"
+ *
+ * const Todo = Schema.Struct({ id: Schema.String })
+ * const getTodo: EffectFn<{ url: { id: string } }, Todo, never, HttpClient.HttpClient> =
+ *   Client.get({ url: (params) => `/todos/${params.url.id}`, response: Todo })
+ * ```
+ */
+type EffectFn<P, A, E, R> = (params: P) => Effect.Effect<A, E, R>
+
+/**
+ * Provides a Layer to an EffectFn, removing the layer's requirements from the returned function's requirements.
+ * This lifts dependencies from the function level to the caller level, avoiding requirement leakage.
+ *
+ * @template P - Parameters type for the function
+ * @template A - Success value type of the Effect
+ * @template E - Error type of the Effect
+ * @template R - Requirements type of the Effect (before providing the layer)
+ * @template LA - Success value type provided by the Layer
+ * @template LE - Error type of the Layer
+ * @template LR - Requirements type of the Layer
+ * @param fn - The EffectFn to provide the layer to
+ * @param layer - The Layer to provide, satisfying some requirements in R
+ * @returns A new function with reduced requirements (R without LR)
+ *
+ * @example
+ * ```ts
+ * import { Effect, Layer, Schema } from "effect"
+ * import { Client } from "rest-api-client"
+ * import { HttpClient } from "@effect/platform"
+ * import { FetchHttpClient } from "@effect/platform"
+ *
+ * const Todo = Schema.Struct({ id: Schema.String })
+ * const getTodo = Client.get({ url: "/todos/1", response: Todo })
+ *
+ * const getTodoWithoutDeps = Client.provideFn(getTodo, FetchHttpClient.layer)
+ * // getTodoWithoutDeps no longer requires HttpClient.HttpClient
+ * ```
+ */
+export const provideFn =
+	<P, A, E, R, LA, LE, LR>(fn: EffectFn<P, A, E, R>, layer: Layer.Layer<LA, LE, LR>) =>
+	(params: P) =>
+		fn(params).pipe(Effect.provide(layer))
+
+/**
+ * Type alias for a factory function that takes configuration and returns an EffectFn.
+ * Used to represent client methods that create route functions based on configuration.
+ *
+ * @template C - Configuration type for the factory
+ * @template P - Parameters type for the returned EffectFn
+ * @template A - Success value type of the Effect
+ * @template E - Error type of the Effect
+ * @template R - Requirements (dependencies) type of the Effect
+ *
+ * @example
+ * ```ts
+ * import { Schema } from "effect"
+ * import { Client } from "rest-api-client"
+ *
+ * const Todo = Schema.Struct({ id: Schema.String })
+ * const client = new Client.Client()
+ * const getFactory: EffectFnFactory<
+ *   { url: string; response: typeof Todo },
+ *   void,
+ *   Todo,
+ *   never,
+ *   HttpClient.HttpClient
+ * > = (spec) => client.get(spec)
+ * ```
+ */
+type EffectFnFactory<C, P, A, E, R> = (config: C) => EffectFn<P, A, E, R>
+
+/**
+ * Provides a Layer to an EffectFnFactory, removing the layer's requirements from the factory's returned functions.
+ * This lifts dependencies from route functions to the service level, avoiding requirement leakage to consumers.
+ *
+ * @template C - Configuration type for the factory
+ * @template P - Parameters type for the returned EffectFn
+ * @template A - Success value type of the Effect
+ * @template E - Error type of the Effect
+ * @template R - Requirements type of the Effect (before providing the layer)
+ * @template LA - Success value type provided by the Layer
+ * @template LE - Error type of the Layer
+ * @template LR - Requirements type of the Layer
+ * @param factory - The EffectFnFactory to provide the layer to
+ * @param layer - The Layer to provide, satisfying some requirements in R
+ * @returns A new factory function that returns EffectFns with reduced requirements (R without LR)
+ *
+ * @example
+ * ```ts
+ * import { Effect, Layer, Schema } from "effect"
+ * import { Client } from "rest-api-client"
+ * import { HttpClient } from "@effect/platform"
+ * import { FetchHttpClient } from "@effect/platform"
+ *
+ * const Todo = Schema.Struct({ id: Schema.String })
+ * const client = new Client.Client()
+ * const getWithoutDeps = Client.provideFactory(client.get, FetchHttpClient.layer)
+ * // getWithoutDeps returns functions that no longer require HttpClient.HttpClient
+ * const getTodo = getWithoutDeps({ url: "/todos/1", response: Todo })
+ * // ^ ? () => Effect.Effect<Todo, ..., never>
+ * ```
+ */
+const provideFactory =
+	<C, P, A, E, R, LA, LE, LR>(factory: EffectFnFactory<C, P, A, E, R>, layer: Layer.Layer<LA, LE, LR>) =>
+	(config: C) =>
+		provideFn(factory(config), layer)
+
+/**
+ * Creates an effect that returns a Client instance with default headers and error handling.
+ * Lifts the HttpClient dependency from the client methods to the effect level, avoiding requirement leakage to consumers.
+ * This effect is meant to be used with `Effect.Service`'s `effect` constructor.
  *
  * @template DefaultHeaders - Default headers type for routes created by the client
  * @template DefaultError - Default error parser type for routes created by the client
  * @param config - Client configuration with optional headers and error handler
- * @returns A factory function that returns an object with a `client` property containing a Client instance
+ * @returns An effect that provides a Client instance where route functions no longer require HttpClient
  *
  * @example
  * ```ts
@@ -282,33 +402,51 @@ export const layerConfig = (config: Context.Tag.Service<Config>) =>
  * import { HttpClientResponse } from "@effect/platform"
  *
  * class ApiClient extends Effect.Service<ApiClient>()("@app/ApiClient", {
- *   sync: Client.make({
+ *   effect: Client.make({
  *     error: (res: HttpClientResponse.HttpClientResponse) =>
  *       Effect.fail(new Error(`Request failed: ${res.status}`))
  *   }),
+ *   // ApiClient requires HttpClient, provided via dependencies
+ *   dependencies: [Client.layerConfig({ url: "https://api.example.com", accessToken: "token" })],
  *   accessors: true,
  * }) {}
  *
  * const program = Effect.gen(function* () {
  *   const client = yield* ApiClient.client
- *   const todo = yield* client.get({ url: "/todos/1", response: Schema.Any })
+ *   // client.get() returns a function that no longer requires HttpClient
+ *   const todo = yield* client.get({ url: "/todos/1", response: Schema.Struct({ id: Schema.String }) })()
  *   return todo
  * })
  *
  * program.pipe(
- *   Effect.provide(
- *     Layer.merge(ApiClient.Default, Client.layerConfig({ url: "https://api.example.com", accessToken: "token" }))
- *   ),
+ *   Effect.provide(ApiClient.Default),
  *   Effect.runPromise
  * )
  * ```
  */
 
-export const make =
-	<DefaultHeaders extends MakerHeaders = never, DefaultError extends MakerError = never>(config: {
-		headers?: DefaultHeaders
-		error?: DefaultError
-	}) =>
-	() => ({ client: new Client({ headers: config.headers, error: config.error }) })
+export const make = <DefaultHeaders extends MakerHeaders = never, DefaultError extends MakerError = never>(config?: {
+	headers?: DefaultHeaders
+	error?: DefaultError
+}) =>
+	Effect.gen(function* () {
+		// lift the HttpClient dependency from the client methods to this effect
+		// see: https://effect.website/docs/requirements-management/layers/#avoiding-requirement-leakage
+
+		const httpClient = yield* HttpClient.HttpClient
+		const layer = Layer.succeed(HttpClient.HttpClient, httpClient)
+
+		const client = new Client({ headers: config?.headers, error: config?.error })
+
+		const get = provideFactory(client.get, layer)
+
+		const post = provideFactory(client.post, layer)
+
+		const put = provideFactory(client.put, layer)
+
+		const del = provideFactory(client.del, layer)
+
+		return { get, post, put, del }
+	})
 
 export { del, get, post, put } from "./make"

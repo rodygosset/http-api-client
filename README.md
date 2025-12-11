@@ -372,7 +372,7 @@ Create a client with default headers and error handlers:
 
 ```ts
 import { Headers, HttpClientResponse } from "@effect/platform"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Client } from "rest-api-client"
 
 const apiClient = new Client.Client({
@@ -405,32 +405,34 @@ const getPublicData = apiClient.get({
 
 ### Client Service
 
-Create an Effect Service for dependency injection:
+Create an Effect Service for dependency injection using `Client.make()`. This lifts the HttpClient dependency from route functions to the service level:
 
 ```ts
 import { Effect, Layer } from "effect"
 import { Client } from "rest-api-client"
 import { HttpClientResponse } from "@effect/platform"
 
-class ApiClient extends Client.Service<ApiClient>()("@app/ApiClient", {
-	error: (res: HttpClientResponse.HttpClientResponse) => Effect.fail(new Error(`Request failed: ${res.status}`)),
+class ApiClient extends Effect.Service<ApiClient>()("@app/ApiClient", {
+	effect: Effect.gen(function* () {
+		const client = yield* Client.make({
+			error: (res: HttpClientResponse.HttpClientResponse) =>
+				Effect.fail(new Error(`Request failed: ${res.status}`)),
+		})
+		return client
+	}),
+	dependencies: [Client.layerConfig({ url: "https://api.example.com", accessToken: "token" })],
 }) {}
 
 const program = Effect.gen(function* () {
-	const client = yield* ApiClient.client
-	const todo = yield* client.get({ url: "/todos/1", response: Todo })
+	const client = yield* ApiClient
+	const todo = yield* client.get({ url: "/todos/1", response: Todo })()
 	return todo
 })
 
-program.pipe(
-	Effect.provide(
-		Layer.merge(ApiClient.Default, Client.layerConfig({ url: "https://api.example.com", accessToken: "token" }))
-	),
-	Effect.runPromise
-)
+program.pipe(Effect.provide(ApiClient.Default), Effect.runPromise)
 ```
 
-See [`examples/05-client-service.ts`](./examples/05-client-service.ts) for a complete example with service dependencies.
+See [`examples/05-client-service.ts`](./examples/05-client-service.ts) for a complete example with service dependencies and accessors.
 
 ### Static Body Values
 

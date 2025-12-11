@@ -27,14 +27,14 @@ export type IsEmptyObject<T> = T extends object ? (keyof T extends never ? true 
  *
  * @example
  * ```ts
- * import type { InferEffectError } from "rest-api-client"
+ * import type { InferFnError } from "rest-api-client"
  * import type { Effect } from "effect"
  *
- * type ErrorType = InferEffectError<() => Effect.Effect<number, string, never>>
+ * type ErrorType = InferFnError<() => Effect.Effect<number, string, never>>
  * // ErrorType = string
  * ```
  */
-export type InferEffectError<E> = E extends (...args: any[]) => Effect.Effect<any, infer F, any> ? F : never
+export type InferFnError<E> = E extends (...args: any[]) => Effect.Effect<any, infer F, any> ? F : never
 
 /**
  * Extracts the requirements (dependencies) type from an Effect-returning function.
@@ -44,11 +44,11 @@ export type InferEffectError<E> = E extends (...args: any[]) => Effect.Effect<an
  *
  * @example
  * ```ts
- * import type { InferEffectRequirements } from "rest-api-client"
+ * import type { InferFnRequirements } from "rest-api-client"
  * import type { Effect } from "effect"
  *
- * type Reqs = InferEffectRequirements<() => Effect.Effect<number, never, { http: HttpClient.HttpClient }>>
+ * type Reqs = InferFnRequirements<() => Effect.Effect<number, never, { http: HttpClient.HttpClient }>>
  * // Reqs = { http: HttpClient.HttpClient }
  * ```
  */
-export type InferEffectRequirements<E> = E extends (...args: any[]) => Effect.Effect<any, any, infer R> ? R : never
+export type InferFnRequirements<E> = E extends (...args: any[]) => Effect.Effect<any, any, infer R> ? R : never

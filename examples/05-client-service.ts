@@ -3,30 +3,48 @@ import { Client } from "../src"
 import { ApiError, NewTodo, Todo } from "./common"
 import { HttpClientResponse } from "@effect/platform"
 
+// dumb example of a logger service for illustration purposes
+
+class Logger extends Effect.Service<Logger>()("@app/Logger", {
+	sync: () => ({ log: Console.log }),
+}) {}
+
 // Service providing a client instance with custom error handling
-// Client.make() returns a factory function that is used with Effect.Service's 'sync' constructor.
-// The factory function returns { client: new Client(...) }, which Effect.Service uses to create the service instance.
+// Client.make() does two things:
+// 1. Returns an effect that provides a client
+// 2. Removes the HttpClient dependency from the client methods, adding it to the client providing effect, and thus to the client providing service (ApiClient)
+// That allows us to avoid leaking the HttpClient dependency to consumers of the ApiClient service
 class ApiClient extends Effect.Service<ApiClient>()("@app/ApiClient", {
-	sync: Client.make({
-		error: (res: HttpClientResponse.HttpClientResponse) =>
-			Effect.fail(
-				new ApiError({
-					method: res.request.method,
-					endpoint: res.request.url,
-					statusCode: res.status,
-					statusText: String(res.status),
-					message: `Request failed: ${res.status}`,
-				})
-			),
+	effect: Effect.gen(function* () {
+		// if we yielded the logger service in the error handler effect, we'd be leaking the dependency to consumers of the ApiClient service
+		// instead, we lift the dependency -- now ApiClient depends on Logger, and we can provide it only once to the ApiClient
+		// see: https://effect.website/docs/requirements-management/layers/#avoiding-requirement-leakage
+
+		const logger = yield* Logger
+
+		const client = yield* Client.make({
+			error: (res: HttpClientResponse.HttpClientResponse) =>
+				Effect.fail(
+					new ApiError({
+						method: res.request.method,
+						endpoint: res.request.url,
+						statusCode: res.status,
+						statusText: String(res.status),
+						message: `Request failed: ${res.status}`,
+					})
+				).pipe(Effect.tap((error) => logger.log(error))),
+		})
+
+		return client
 	}),
-	accessors: true, // Generates static accessors (e.g., ApiClient.client)
+	dependencies: [Logger.Default, Client.layerConfig({ url: "https://example.com", accessToken: "token" })],
 }) {}
 
 // Service depending on ApiClient, exposing CRUD operations as accessor functions
 export class TodoRepo extends Effect.Service<TodoRepo>()("@app/TodoRepo", {
 	effect: Effect.gen(function* () {
 		// Yield client dependency from the service context
-		const client = yield* ApiClient.client
+		const client = yield* ApiClient
 
 		// Build route functions using the injected client
 		const getTodos = client.get({ url: "/todos", response: Todo.pipe(Schema.Array) })
@@ -62,7 +80,7 @@ const example = Effect.gen(function* () {
 }).pipe(
 	Effect.provide(
 		// Merge repository layer with client config layer
-		Layer.merge(TodoRepo.Default, Client.layerConfig({ url: "https://example.com", accessToken: "token" }))
+		TodoRepo.Default
 	),
 	Effect.catchAll((error) => Console.error("Error:", error))
 )

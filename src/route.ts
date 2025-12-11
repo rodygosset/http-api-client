@@ -5,6 +5,7 @@ import type { Headers } from "./headers"
 import type { Input } from "./input"
 import type { Output } from "./output"
 import type { Error } from "./error"
+import type { InferFnRequirements } from "./utils"
 
 /**
  * Internal representation of an HTTP route specification.
@@ -45,3 +46,10 @@ export class Route<
 	response?: O
 	error?: E
 }> {}
+
+export type InferRouteRequirements<
+	H extends Headers = never,
+	I extends Input = never,
+	O extends Output = never,
+	E extends Error = never
+> = InferFnRequirements<H> | InferFnRequirements<I> | InferFnRequirements<O> | InferFnRequirements<E>

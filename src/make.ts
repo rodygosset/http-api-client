@@ -1,15 +1,15 @@
 import { Headers, HttpBody, HttpClient, HttpClientRequest, HttpClientResponse } from "@effect/platform"
 import { ResponseError } from "@effect/platform/HttpClientError"
 import type { HttpMethod } from "@effect/platform/HttpMethod"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Layer } from "effect"
 import type { MakerSchema } from "./common"
 import { fromMakerError, type InferResponseError, type MakerError, type ToError } from "./error"
 import { fromMakerHeaders, type MakerHeaders, type MakerHeadersFn, type ToHeaders } from "./headers"
 import { fromMakerInput, type MakerInput, type MakerInputFn, type ToInput } from "./input"
 import { fromMakerOutput, type InferOutput, type MakerOutput, type ToOutput } from "./output"
-import { Route } from "./route"
+import { Route, type InferRouteRequirements } from "./route"
 import { fromMakerUrl, type MakerUrl, type MakerUrlFn, type ToUrl } from "./url"
-import type { InferEffectError, InferEffectRequirements, IsEmptyObject } from "./utils"
+import type { InferFnError, InferFnRequirements, IsEmptyObject } from "./utils"
 
 /**
  * Extracts URL parameters from a MakerUrl type.
@@ -173,7 +173,7 @@ export function make<
 					return headers
 				})
 			)
-		) as Effect.Effect<Headers.Headers, InferEffectError<H>, InferEffectRequirements<H>>
+		) as Effect.Effect<Headers.Headers, InferFnError<H>, InferFnRequirements<H>>
 
 	const parseBody = (schema: MakerSchema, body: Schema.Schema.Type<I>) =>
 		Schema.encode(schema)(body).pipe(Effect.flatMap(HttpBody.json))
@@ -190,8 +190,8 @@ export function make<
 			return yield* spec.body.fn(params.body)
 		}) as Effect.Effect<
 			HttpBody.Uint8Array | undefined,
-			InferEffectError<I> | InferEffectError<typeof parseBody>,
-			InferEffectRequirements<I> | InferEffectRequirements<typeof parseBody>
+			InferFnError<I> | InferFnError<typeof parseBody>,
+			InferFnRequirements<I> | InferFnRequirements<typeof parseBody>
 		>
 
 	const parseResponse = (schema: MakerSchema, response: HttpClientResponse.HttpClientResponse) =>
@@ -213,8 +213,8 @@ export function make<
 			}
 		}) as Effect.Effect<
 			InferOutput<O>,
-			InferEffectError<O> | InferEffectError<typeof parseResponse>,
-			InferEffectRequirements<O> | InferEffectRequirements<typeof parseResponse>
+			InferFnError<O> | InferFnError<typeof parseResponse>,
+			InferFnRequirements<O> | InferFnRequirements<typeof parseResponse>
 		>
 
 	const getError = (getter: ToError<E>, response: HttpClientResponse.HttpClientResponse) =>
@@ -228,8 +228,8 @@ export function make<
 			}
 		}) as Effect.Effect<
 			never,
-			InferResponseError<E> | InferEffectError<typeof parseResponse>,
-			InferEffectRequirements<typeof parseResponse>
+			InferResponseError<E> | InferFnError<typeof parseResponse>,
+			InferFnRequirements<E> | InferFnRequirements<typeof parseResponse>
 		>
 
 	return (params: MakerParams<U, H, I>) =>
