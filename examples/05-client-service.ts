@@ -32,7 +32,7 @@ class ApiClient extends Effect.Service<ApiClient>()("@app/ApiClient", {
 						statusText: String(res.status),
 						message: `Request failed: ${res.status}`,
 					})
-				).pipe(Effect.tap((error) => logger.log(error))),
+				).pipe(Effect.tapError((error) => logger.log(error))),
 		})
 
 		return client
